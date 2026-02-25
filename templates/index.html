@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Document Verifier</title>
+</head>
+<body>
+    <h2>Register Document</h2>
+    <form action="/register" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" required />
+        <button type="submit">Register</button>
+    </form>
+
+    <hr>
+
+    <h2>Verify Document</h2>
+    <form action="/verify" method="post" enctype="multipart/form-data">
+        <input type="text" name="doc_id" placeholder="Enter Document ID" required />
+        <br><br>
+        <input type="file" name="file" required />
+        <button type="submit">Verify</button>
+    </form>
+</body>
+</html>

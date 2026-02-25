@@ -1,0 +1,4 @@
+Flask
+PyPDF2
+qrcode
+pillow
