@@ -22,6 +22,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_STORAGE_ROOT = BASE_DIR
 STATIC_FOLDER = os.path.join(BASE_DIR, "static")
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
+RECENT_VERIFICATION_LIMIT = 5
+MAX_VERIFICATION_HISTORY = 25
 
 DOCUMENT_TYPE_BY_EXTENSION = {
     "pdf": "pdf",
@@ -134,6 +136,16 @@ def detect_document_type(filename):
     """Map a filename to one of our supported document types."""
     extension = get_file_extension(filename)
     return DOCUMENT_TYPE_BY_EXTENSION.get(extension)
+
+
+def format_document_type_label(document_type):
+    """Format a document type for human-readable UI labels."""
+    labels = {
+        "pdf": "PDF",
+        "docx": "DOCX",
+        "image": "Image",
+    }
+    return labels.get(document_type, (document_type or "Unknown").upper())
 
 
 def get_uploaded_file_from_request():
@@ -276,6 +288,92 @@ def get_record_document_type(record):
     return inferred_type or "pdf"
 
 
+def get_record_verification_history(record):
+    """Read verification history safely from a saved record."""
+    history = record.get("verification_history", [])
+    return history if isinstance(history, list) else []
+
+
+def build_document_summary(doc_id, record):
+    """Build a compact summary used on the QR verification page."""
+    verification_history = get_record_verification_history(record)
+    last_verification = verification_history[-1] if verification_history else None
+    document_type = get_record_document_type(record)
+
+    return {
+        "document_id": doc_id,
+        "filename": record.get("filename", "Unknown document"),
+        "doc_type": document_type,
+        "doc_type_label": format_document_type_label(document_type),
+        "registered_at": record.get("uploaded_at", "Unknown"),
+        "section_count": len(get_record_hashes(record)),
+        "last_verified_at": (last_verification or {}).get("verified_at"),
+        "last_verification_status": (last_verification or {}).get("status"),
+        "last_verification_reason": (last_verification or {}).get("reason"),
+    }
+
+
+def get_recent_verifications(record, limit=RECENT_VERIFICATION_LIMIT):
+    """Return the newest verification attempts first."""
+    history = get_record_verification_history(record)
+    return list(reversed(history[-limit:]))
+
+
+def create_verification_event(
+    verification_mode,
+    uploaded_filename,
+    uploaded_doc_type,
+    verification_result,
+):
+    """Create a saved verification history event."""
+    return {
+        "verified_at": datetime.now().strftime(TIMESTAMP_FORMAT),
+        "status": verification_result.get("status", "Unknown"),
+        "reason": verification_result.get("reason"),
+        "verification_mode": verification_mode,
+        "uploaded_filename": uploaded_filename,
+        "uploaded_doc_type": uploaded_doc_type,
+        "modified_sections": verification_result.get("modified_pages", []),
+    }
+
+
+def store_verification_event(
+    registered_documents,
+    doc_id,
+    verification_mode,
+    uploaded_filename,
+    uploaded_doc_type,
+    verification_result,
+):
+    """Persist a verification attempt against a matched registered record."""
+    record = registered_documents.get(doc_id)
+    if record is None:
+        return
+
+    verification_history = get_record_verification_history(record)
+    verification_history.append(
+        create_verification_event(
+            verification_mode=verification_mode,
+            uploaded_filename=uploaded_filename,
+            uploaded_doc_type=uploaded_doc_type,
+            verification_result=verification_result,
+        )
+    )
+    record["verification_history"] = verification_history[-MAX_VERIFICATION_HISTORY:]
+    save_registered_documents(registered_documents)
+
+
+def attach_document_context(response_payload, registered_documents, doc_id):
+    """Attach saved record details to a verification response."""
+    record = registered_documents.get(doc_id)
+    if record is None:
+        return response_payload
+
+    response_payload["document_summary"] = build_document_summary(doc_id, record)
+    response_payload["recent_verifications"] = get_recent_verifications(record)
+    return response_payload
+
+
 def find_best_document_match(current_hashes, registered_documents, document_type):
     """Find the closest saved record for an uploaded document."""
     best_document_id = None
@@ -394,13 +492,13 @@ def verify_using_document_id(doc_id, file_path, uploaded_doc_type, registered_do
         document_type=registered_doc_type,
     )
 
-    return jsonify({
+    return {
         "verification_mode": "document-id",
         "uploaded_doc_type": uploaded_doc_type,
         "registered_doc_type": registered_doc_type,
         "matched_document_id": doc_id,
         "verification_result": verification_result,
-    })
+    }
 
 
 def verify_using_auto_match(file_path, uploaded_doc_type, registered_documents):
@@ -424,7 +522,7 @@ def verify_using_auto_match(file_path, uploaded_doc_type, registered_documents):
             registered_documents[matched_document_id]
         )
 
-    return jsonify(response_payload)
+    return response_payload
 
 
 @app.route("/test-hash")
@@ -498,7 +596,7 @@ def verify_document_route():
     if not uploaded_doc_type:
         return error_response(f"Supported file types: {SUPPORTED_TYPES_LABEL}", 400)
 
-    file_path, _, _ = save_uploaded_file(uploaded_file)
+    file_path, original_filename, _ = save_uploaded_file(uploaded_file)
     registered_documents = load_registered_documents()
 
     if not registered_documents:
@@ -506,33 +604,70 @@ def verify_document_route():
 
     try:
         if requested_doc_id:
-            return verify_using_document_id(
+            response_payload = verify_using_document_id(
                 doc_id=requested_doc_id,
                 file_path=file_path,
                 uploaded_doc_type=uploaded_doc_type,
                 registered_documents=registered_documents,
             )
-
-        return verify_using_auto_match(
-            file_path=file_path,
-            uploaded_doc_type=uploaded_doc_type,
-            registered_documents=registered_documents,
-        )
+        else:
+            response_payload = verify_using_auto_match(
+                file_path=file_path,
+                uploaded_doc_type=uploaded_doc_type,
+                registered_documents=registered_documents,
+            )
     except ValueError as exc:
         return error_response(str(exc), 400)
+
+    if not isinstance(response_payload, dict):
+        return response_payload
+
+    response_payload["uploaded_filename"] = original_filename
+    response_payload["verification_timestamp"] = datetime.now().strftime(TIMESTAMP_FORMAT)
+
+    matched_document_id = response_payload.get("matched_document_id")
+    if matched_document_id:
+        store_verification_event(
+            registered_documents=registered_documents,
+            doc_id=matched_document_id,
+            verification_mode=response_payload["verification_mode"],
+            uploaded_filename=original_filename,
+            uploaded_doc_type=uploaded_doc_type,
+            verification_result=response_payload["verification_result"],
+        )
+        attach_document_context(
+            response_payload=response_payload,
+            registered_documents=registered_documents,
+            doc_id=matched_document_id,
+        )
+
+    return jsonify(response_payload)
 
 
 @app.route("/qr-verify/<doc_id>")
 def qr_verify_page(doc_id):
-    """Show a tiny upload form for QR-based verification."""
-    return f"""
-    <h2>QR Document Verification</h2>
-    <form action="{url_for('verify_document_route')}" method="post" enctype="multipart/form-data">
-        <input type="hidden" name="doc_id" value="{doc_id}">
-        <input type="file" name="file" accept="{UPLOAD_ACCEPT_ATTR}" required />
-        <button type="submit">Verify Document</button>
-    </form>
-    """
+    """Render the full QR verification experience for one document."""
+    registered_documents = load_registered_documents()
+    record = registered_documents.get(doc_id)
+
+    if record is None:
+        return render_template(
+            "qr_verify.html",
+            document_summary=None,
+            doc_id=doc_id,
+            recent_verifications=[],
+            upload_accept_attr=UPLOAD_ACCEPT_ATTR,
+            verify_action=url_for("verify_document_route"),
+        ), 404
+
+    return render_template(
+        "qr_verify.html",
+        document_summary=build_document_summary(doc_id, record),
+        doc_id=doc_id,
+        recent_verifications=get_recent_verifications(record),
+        upload_accept_attr=UPLOAD_ACCEPT_ATTR,
+        verify_action=url_for("verify_document_route"),
+    )
 
 
 @app.route("/qr-code/<path:filename>")

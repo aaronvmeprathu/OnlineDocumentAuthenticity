@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QR Document Verification</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+    <main class="shell">
+        <header class="hero">
+            <p class="eyebrow">QR Verification</p>
+            <h1>Verify Registered Document</h1>
+            <p class="subtitle">
+                Review the registered record, upload the document you received, and confirm its authenticity with
+                a timestamped verification result.
+            </p>
+        </header>
+
+        <section class="panel-grid qr-grid">
+            <article class="panel">
+                <div class="panel-head">
+                    <h2>Registered Record</h2>
+                    <span class="badge">
+                        {% if document_summary %}
+                            {{ document_summary.doc_type_label }}
+                        {% else %}
+                            Unknown
+                        {% endif %}
+                    </span>
+                </div>
+
+                {% if document_summary %}
+                    <div class="status-block">
+                        <span
+                            id="qr-current-status"
+                            class="status {% if document_summary.last_verification_status %}{{ document_summary.last_verification_status|lower }}{% else %}unknown{% endif %}"
+                        >
+                            {{ document_summary.last_verification_status or "Awaiting Verification" }}
+                        </span>
+                        <p id="qr-status-note" class="panel-copy compact">
+                            {% if document_summary.last_verified_at %}
+                                Last checked on {{ document_summary.last_verified_at }}.
+                            {% else %}
+                                No verification attempts have been recorded yet.
+                            {% endif %}
+                        </p>
+                    </div>
+
+                    <div class="detail-grid">
+                        <div class="detail-card">
+                            <span class="detail-label">Document ID</span>
+                            <strong class="detail-value">{{ document_summary.document_id }}</strong>
+                        </div>
+                        <div class="detail-card">
+                            <span class="detail-label">Registered On</span>
+                            <strong class="detail-value">{{ document_summary.registered_at }}</strong>
+                        </div>
+                        <div class="detail-card">
+                            <span class="detail-label">Document Type</span>
+                            <strong class="detail-value">{{ document_summary.doc_type_label }}</strong>
+                        </div>
+                        <div class="detail-card">
+                            <span class="detail-label">Tracked Sections</span>
+                            <strong class="detail-value">{{ document_summary.section_count }}</strong>
+                        </div>
+                    </div>
+
+                    <div class="record-note">
+                        <span class="detail-label">Registered File</span>
+                        <p class="record-filename">{{ document_summary.filename }}</p>
+                    </div>
+                {% else %}
+                    <div class="alert error">
+                        This QR code points to an unknown or unavailable document ID: <strong>{{ doc_id }}</strong>
+                    </div>
+                {% endif %}
+            </article>
+
+            <article class="panel">
+                <div class="panel-head">
+                    <h2>Run Verification</h2>
+                    <span class="badge">Live Check</span>
+                </div>
+
+                {% if document_summary %}
+                    <p class="panel-copy">
+                        Upload the document you received. The system will compare its fingerprint against the
+                        registered record and return a timestamped result.
+                    </p>
+                    <form
+                        id="qr-verify-form"
+                        action="{{ verify_action }}"
+                        method="post"
+                        enctype="multipart/form-data"
+                        novalidate
+                    >
+                        <input type="hidden" name="doc_id" value="{{ doc_id }}" />
+                        <label for="qr-verify-file">Document file</label>
+                        <input
+                            id="qr-verify-file"
+                            type="file"
+                            name="file"
+                            accept="{{ upload_accept_attr }}"
+                            required
+                        />
+                        <button id="qr-verify-submit" type="submit">Verify Document</button>
+                    </form>
+                {% else %}
+                    <p class="panel-copy">
+                        Verification is unavailable because this document record could not be found.
+                    </p>
+                {% endif %}
+
+                <div id="qr-alert" class="alert hidden"></div>
+                <article id="qr-result" class="result-card hidden"></article>
+            </article>
+        </section>
+
+        <section class="panel verification-history">
+            <div class="panel-head">
+                <h2>Recent Verification Activity</h2>
+                <span id="qr-history-badge" class="badge">Latest {{ recent_verifications|length if recent_verifications else 0 }}</span>
+            </div>
+            <div id="qr-history-list" class="history-list">
+                {% if recent_verifications %}
+                    {% for item in recent_verifications %}
+                        <article class="history-item">
+                            <div class="history-item-head">
+                                <span class="status {{ item.status|lower }}">{{ item.status }}</span>
+                                <span class="history-time">{{ item.verified_at }}</span>
+                            </div>
+                            <p class="history-reason">
+                                {{ item.reason or "Verification completed successfully." }}
+                            </p>
+                            <div class="meta-row">
+                                <span class="chip">{{ item.uploaded_filename }}</span>
+                                <span class="chip">{{ item.uploaded_doc_type|upper }}</span>
+                                <span class="chip">{{ item.verification_mode }}</span>
+                            </div>
+                        </article>
+                    {% endfor %}
+                {% else %}
+                    <p class="empty-state">No verification attempts have been recorded for this document yet.</p>
+                {% endif %}
+            </div>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='qr_verify.js') }}"></script>
+</body>
+</html>
