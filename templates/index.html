@@ -1,23 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Document Verifier</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document Authenticity Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
 </head>
 <body>
-    <h2>Register Document</h2>
-    <form action="/register" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" required />
-        <button type="submit">Register</button>
-    </form>
+    <main class="shell">
+        <header class="hero">
+            <p class="eyebrow">Document Security</p>
+            <h1>Document Authenticity Portal</h1>
+            <p class="subtitle">
+                Register official PDFs, DOCX files, or images, generate a verifiable document ID, and validate
+                document integrity instantly with page-level tamper detection.
+            </p>
+        </header>
 
-    <hr>
+        <section class="panel-grid">
+            <article class="panel">
+                <div class="panel-head">
+                    <h2>Register Document</h2>
+                    <span class="badge">Step 1</span>
+                </div>
+                <p class="panel-copy">
+                    Upload an original PDF, DOCX, or image to generate its digital fingerprint and QR-linked verification record.
+                </p>
+                <form id="register-form" action="{{ url_for('register_document') }}" method="post" enctype="multipart/form-data" novalidate>
+                    <label for="register-file">Document file</label>
+                    <input id="register-file" type="file" name="file" accept=".pdf,.docx,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp,.gif,image/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
+                    <button id="register-submit" type="submit">Register Document</button>
+                </form>
+                <p class="hint">Supported: PDF, DOCX, PNG, JPG, JPEG, BMP, TIFF, WEBP, GIF.</p>
+            </article>
 
-    <h2>Verify Document</h2>
-    <form action="/verify" method="post" enctype="multipart/form-data">
-        <input type="text" name="doc_id" placeholder="Enter Document ID" required />
-        <br><br>
-        <input type="file" name="file" required />
-        <button type="submit">Verify</button>
-    </form>
+            <article class="panel">
+                <div class="panel-head">
+                    <h2>Verify Document</h2>
+                    <span class="badge">Step 2</span>
+                </div>
+                <p class="panel-copy">
+                    Upload a PDF, DOCX, or image to auto-verify it. You can still provide a document ID for strict one-to-one verification.
+                </p>
+                <form id="verify-form" action="{{ url_for('verify_document_route') }}" method="post" enctype="multipart/form-data" novalidate>
+                    <label for="doc-id">Document ID (optional)</label>
+                    <input id="doc-id" type="text" name="doc_id" placeholder="doc_1234567890" />
+                    <label for="verify-file">Document file</label>
+                    <input id="verify-file" type="file" name="file" accept=".pdf,.docx,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp,.gif,image/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
+                    <button id="verify-submit" type="submit">Verify Document</button>
+                </form>
+            </article>
+        </section>
+
+        <section class="results" aria-live="polite">
+            <div id="alert-box" class="alert hidden"></div>
+            <article id="register-result" class="result-card hidden"></article>
+            <article id="verify-result" class="result-card hidden"></article>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

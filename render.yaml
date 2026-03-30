@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: document-authenticity-portal
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: waitress-serve --port=$PORT wsgi:app
+    healthCheckPath: /health
+    envVars:
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: STORAGE_ROOT
+        value: /opt/render/project/src/storage

@@ -2,3 +2,5 @@ Flask
 PyPDF2
 qrcode
 pillow
+python-docx
+waitress

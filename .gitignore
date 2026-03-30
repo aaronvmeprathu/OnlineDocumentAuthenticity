@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.log
+.env
+.env.*
+venv/
+.venv/
+
+uploads/
+qr_codes/
+data/hashes.json
+
+static/doc_*.png
